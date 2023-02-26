@@ -24,6 +24,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog/v2"
+
 	// Uncomment the following line to load the gcp plugin (only required to authenticate against GKE clusters).
 	// _ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
@@ -37,10 +38,16 @@ var (
 	kubeconfig string
 )
 
+func init() {
+	flag.StringVar(&kubeconfig, "kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
+	flag.StringVar(&masterURL, "master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
+}
+
 func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
 
+	// TODO: 如何使用 chan
 	// set up signals so we handle the first shutdown signal gracefully
 	stopCh := signals.SetupSignalHandler()
 
@@ -49,17 +56,22 @@ func main() {
 		klog.Fatalf("Error building kubeconfig: %s", err.Error())
 	}
 
+	// NOTE: 得到一个通用的 kube client
 	kubeClient, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
 		klog.Fatalf("Error building kubernetes clientset: %s", err.Error())
 	}
 
+	// NOTE: 用户自己 generate 的 client set，给 sample CRD 使用
 	exampleClient, err := clientset.NewForConfig(cfg)
 	if err != nil {
 		klog.Fatalf("Error building example clientset: %s", err.Error())
 	}
 
+	// NOTE: 传入了 kube client 得到一个 k8s 资源的 informer
 	kubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeClient, time.Second*30)
+
+	// NOTE: 用户自己 generate 的 informer
 	exampleInformerFactory := informers.NewSharedInformerFactory(exampleClient, time.Second*30)
 
 	controller := NewController(kubeClient, exampleClient,
@@ -74,9 +86,4 @@ func main() {
 	if err = controller.Run(2, stopCh); err != nil {
 		klog.Fatalf("Error running controller: %s", err.Error())
 	}
-}
-
-func init() {
-	flag.StringVar(&kubeconfig, "kubeconfig", "", "Path to a kubeconfig. Only required if out-of-cluster.")
-	flag.StringVar(&masterURL, "master", "", "The address of the Kubernetes API server. Overrides any value in kubeconfig. Only required if out-of-cluster.")
 }
